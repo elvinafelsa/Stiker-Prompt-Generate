@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sticker Prompt Generator - Vina</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: radial-gradient(1000px 600px at 10% 10%, #2b0036, #0b0410 40%, #07060a 100%); }
+    .glass { background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)); backdrop-filter: blur(6px); }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    /* small helpers for modal & toast */
+    .modal-backdrop { background: rgba(0,0,0,0.6); }
+  </style>
+</head>
+<body class="min-h-screen text-gray-100 font-sans p-6">
+  <div class="max-w-5xl mx-auto">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold">Sticker Prompt Generator (HTML + Tailwind)</h1>
+      <p class="text-sm text-gray-300">Buat prompt AI untuk generate stiker — copy-paste ke Dreamina / Stable / Midjourney style</p>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <section class="lg:col-span-1 glass p-4 rounded-2xl shadow-lg">
+        <h2 class="font-semibold text-lg mb-3">Pengaturan Karakter</h2>
+        <label class="text-sm">Nama karakter</label>
+        <input id="character" class="w-full mt-1 mb-3 p-2 rounded bg-transparent border border-gray-700" placeholder="Contoh: Vivi" value="Vivi" />
+        <label class="text-sm">Deskripsi singkat</label>
+        <input id="desc" class="w-full mt-1 mb-3 p-2 rounded bg-transparent border border-gray-700" placeholder="Mis. wanita yang suka ngulik product digital dan AI" value="wanita yang suka ngulik product digital, AI, dan threads" />
+        <label class="text-sm">Gaya / Material</label>
+        <select id="style" class="w-full mt-1 mb-3 p-2 rounded bg-transparent border border-gray-700">
+          <option>claymation / clay figurine</option>
+          <option>3D Pixar</option>
+          <option>chibi</option>
+          <option>flat vector</option>
+        </select>
+        <label class="text-sm">Tema warna & mood</label>
+        <input id="mood" class="w-full mt-1 mb-3 p-2 rounded bg-transparent border border-gray-700" placeholder="Mis. vibrant, playful, warm" value="vibrant, playful, whimsical" />
+        <label class="text-sm">Resolusi / Aspect</label>
+        <select id="resolution" class="w-full mt-1 mb-4 p-2 rounded bg-transparent border border-gray-700">
+          <option>1024x1024 (square)</option>
+          <option>512x512</option>
+          <option>2048x2048 (high-res)</option>
+          <option>512x768 (portrait)</option>
+        </select>
+        <div class="flex flex-col gap-2">
+          <div class="flex gap-2">
+            <button id="generateBtn" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded">Generate 6 Prompt</button>
+            <button id="clearBtn" class="flex-1 border border-gray-600 text-gray-200 py-2 rounded">Clear</button>
+          </div>
+          <button id="mergeBtn" class="bg-pink-600 hover:bg-pink-700 text-white py-2 rounded">Satukan Prompt</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-3">Tip: Jika tombol <em>Copy</em> tidak bekerja karena kebijakan browser/sandbox, gunakan tombol <em>Download .txt</em> atau salin manual dari dialog yang muncul.</p>
+      </section>
+
+      <section class="lg:col-span-2 glass p-4 rounded-2xl shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-lg">Hasil Prompt (6 Pose)</h2>
+          <div class="flex gap-2">
+            <button id="copyAll" class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-sm">Copy Semua</button>
+            <button id="downloadTxt" class="bg-indigo-600 hover:bg-indigo-700 text-white py-1 px-3 rounded text-sm">Download .txt</button>
+          </div>
+        </div>
+        <div id="promptsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+        <div id="mergedPromptContainer" class="mt-4 hidden">
+          <h3 class="font-semibold mb-2">Prompt Tersatukan:</h3>
+          <pre id="mergedPrompt" class="text-xs text-gray-200 p-2 border border-gray-700 rounded"></pre>
+          <div class="flex gap-2 mt-2">
+            <button id="copyMerged" class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-sm">Copy Prompt Tersatukan</button>
+            <button id="downloadMerged" class="bg-slate-600 hover:bg-slate-700 text-white py-1 px-3 rounded text-sm">Download Gabungan</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="mt-6 text-sm text-gray-400">Made with ♥ — Sticker Prompt Generator</footer>
+  </div>
+
+  <!-- Modal container (created dynamically) -->
+  <div id="manualCopyModalRoot"></div>
+
+  <script>
+    // --- Data & helpers ---
+    const poses = [
+      'berdiri sambil mengangkat keranjang, ekspresi percaya diri',
+      'duduk sambil menatap layar laptop kecil, pose santai',
+      'melompat sedikit dengan pose excited, tangan di udara',
+      'menunjukkan stiker ke kamera dengan senyum hangat',
+      'membaca buku kecil dengan kacamata, pose thoughtful',
+      'mengacungkan jempol, ekspresi victory'
+    ];
+
+    function buildPrompt({character, desc, style, mood, resolution, pose}){
+      character = character.trim(); desc = desc.trim(); style = style.trim(); mood = mood.trim(); resolution = resolution.trim();
+      return `${style} figurine of ${character}, ${desc}, ${pose}. Highly detailed handmade clay texture, visible fingerprints and modeling marks, whimsical stop-motion aesthetic, ${mood}. Close-up shot, studio lighting, soft shadows, photoreal clay materials, DO NOT include watermark. Output resolution: ${resolution}. --v 5 --ar 1:1`;
+    }
+
+    function escapeHtml(unsafe) {
+      return unsafe.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    }
+
+    // Robust copy helper: try Clipboard API, then execCommand fallback, then show manual dialog
+    async function safeCopy(text) {
+      if (!text) return false;
+
+      // 1) Try modern Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (err) {
+          console.warn('navigator.clipboard.writeText failed:', err);
+          // fallthrough to fallback
+        }
+      }
+
+      // 2) Fallback to textarea + execCommand (older browsers / fallback)
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        const ok = document.execCommand && document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) return true;
+      } catch (err) {
+        console.warn('execCommand fallback failed:', err);
+      }
+
+      // 3) Give up to the caller so they can show manual copy UI
+      return false;
+    }
+
+    // Toast helper
+    function showToast(msg, timeout = 1400) {
+      const t = document.createElement('div');
+      t.className = 'fixed bottom-6 right-6 bg-black/80 text-white px-4 py-2 rounded shadow-lg z-50';
+      t.style.opacity = '0';
+      t.style.transition = 'opacity 180ms ease';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      requestAnimationFrame(()=>{ t.style.opacity = '1'; });
+      setTimeout(()=>{ t.style.opacity = '0'; setTimeout(()=>t.remove(), 200); }, timeout);
+    }
+
+    // Manual copy modal (for restricted environments)
+    function showManualCopyDialog(text) {
+      // root
+      const root = document.getElementById('manualCopyModalRoot');
+
+      // backdrop
+      const backdrop = document.createElement('div');
+      backdrop.className = 'fixed inset-0 flex items-center justify-center modal-backdrop z-50';
+      backdrop.style.padding = '1rem';
+
+      const dialog = document.createElement('div');
+      dialog.className = 'max-w-2xl w-full bg-white/5 p-4 rounded-lg border border-gray-700';
+
+      const title = document.createElement('div');
+      title.className = 'text-white font-semibold mb-2';
+      title.textContent = 'Clipboard terblokir — salin manual:';
+
+      const ta = document.createElement('textarea');
+      ta.className = 'w-full h-48 p-2 rounded bg-gray-900 text-white';
+      ta.value = text;
+
+      const hint = document.createElement('div');
+      hint.className = 'text-sm text-gray-300 mt-2 mb-3';
+      hint.textContent = 'Pilih teks (Ctrl/Cmd+A) kemudian tekan Ctrl/Cmd+C. Atau gunakan tombol Salin untuk mencoba fallback lagi.';
+
+      const actions = document.createElement('div');
+      actions.className = 'flex gap-2 justify-end mt-3';
+
+      const tryCopyBtn = document.createElement('button');
+      tryCopyBtn.className = 'bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-sm';
+      tryCopyBtn.textContent = 'Coba Salin Otomatis';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'bg-gray-600 hover:bg-gray-700 text-white py-1 px-3 rounded text-sm';
+      closeBtn.textContent = 'Tutup';
+
+      actions.appendChild(tryCopyBtn);
+      actions.appendChild(closeBtn);
+
+      dialog.appendChild(title);
+      dialog.appendChild(ta);
+      dialog.appendChild(hint);
+      dialog.appendChild(actions);
+      backdrop.appendChild(dialog);
+      root.appendChild(backdrop);
+
+      // auto-select text
+      requestAnimationFrame(()=>{ ta.focus(); ta.select(); });
+
+      closeBtn.addEventListener('click', ()=>{ backdrop.remove(); });
+
+      tryCopyBtn.addEventListener('click', async ()=>{
+        tryCopyBtn.disabled = true;
+        const ok = await safeCopy(text);
+        if (ok) {
+          showToast('Teks berhasil disalin (fallback)');
+          backdrop.remove();
+        } else {
+          showToast('Gagal menyalin otomatis. Silakan salin manual.');
+          tryCopyBtn.disabled = false;
+          ta.focus(); ta.select();
+        }
+      });
+    }
+
+    // --- Rendering & events ---
+    function renderPrompts(){
+      const container = document.getElementById('promptsContainer');
+      container.innerHTML = '';
+      document.getElementById('mergedPromptContainer').classList.add('hidden');
+      const character = document.getElementById('character').value || 'Character';
+      const desc = document.getElementById('desc').value || '';
+      const style = document.getElementById('style').value || 'claymation';
+      const mood = document.getElementById('mood').value || 'vibrant, playful';
+      const resolution = document.getElementById('resolution').value || '1024x1024';
+
+      poses.forEach((poseText, idx) => {
+        const p = buildPrompt({character, desc, style, mood, resolution, pose: poseText});
+        const card = document.createElement('div');
+        card.className = 'p-3 rounded-lg border border-gray-700 bg-gradient-to-br from-black/20 to-transparent';
+        card.dataset.prompt = p; // store original prompt for copying
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="text-xs text-gray-300">Pose ${idx+1}</div>
+              <div class="font-semibold">${poseText}</div>
+            </div>
+            <div class="flex gap-2">
+              <button class="copyBtn py-1 px-2 rounded border border-gray-600 text-xs">Copy</button>
+            </div>
+          </div>
+          <pre class="mt-3 text-xs text-gray-200">${escapeHtml(p)}</pre>
+        `;
+
+        const btn = card.querySelector('.copyBtn');
+        btn.addEventListener('click', async ()=>{
+          btn.disabled = true;
+          const promptText = card.dataset.prompt;
+          const ok = await safeCopy(promptText);
+          if (ok) {
+            btn.textContent = 'Copied!';
+            showToast('Prompt tersalin ke clipboard');
+            setTimeout(()=>{ btn.textContent = 'Copy'; btn.disabled = false; }, 1200);
+          } else {
+            btn.textContent = 'Copy';
+            btn.disabled = false;
+            showManualCopyDialog(promptText);
+          }
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', ()=>{ renderPrompts(); });
+
+    document.getElementById('clearBtn').addEventListener('click', ()=>{
+      document.getElementById('promptsContainer').innerHTML = '';
+      document.getElementById('mergedPromptContainer').classList.add('hidden');
+    });
+
+    document.getElementById('copyAll').addEventListener('click', async ()=>{
+      const cards = Array.from(document.querySelectorAll('#promptsContainer > div[data-prompt]'));
+      if (!cards.length) return alert('Belum ada prompt. Klik Generate dulu.');
+      const all = cards.map((c, i) => `Pose ${i+1}:\n${c.dataset.prompt}`).join('\n\n');
+      const ok = await safeCopy(all);
+      if (ok) {
+        showToast('Semua prompt telah disalin ke clipboard');
+      } else {
+        showManualCopyDialog(all);
+      }
+    });
+
+    document.getElementById('downloadTxt').addEventListener('click', ()=>{
+      const cards = Array.from(document.querySelectorAll('#promptsContainer > div[data-prompt]'));
+      if (!cards.length) return alert('Belum ada prompt. Klik Generate dulu.');
+      const all = cards.map((c, i) => `Pose ${i+1}:\n${c.dataset.prompt}`).join('\n\n');
+      const blob = new Blob([all], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'sticker-prompts.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('mergeBtn').addEventListener('click', ()=>{
+      const cards = Array.from(document.querySelectorAll('#promptsContainer > div[data-prompt]'));
+      if (!cards.length) return alert('Belum ada prompt. Klik Generate dulu.');
+      const merged = cards.map(c => c.dataset.prompt).join(' ');
+      document.getElementById('mergedPrompt').textContent = merged;
+      document.getElementById('mergedPromptContainer').classList.remove('hidden');
+      // scroll into view
+      setTimeout(()=> document.getElementById('mergedPromptContainer').scrollIntoView({behavior:'smooth'}), 120);
+    });
+
+    document.getElementById('copyMerged').addEventListener('click', async ()=>{
+      const mergedText = document.getElementById('mergedPrompt').textContent;
+      if (!mergedText) return alert('Belum ada prompt gabungan. Klik Satukan Prompt dulu.');
+      const ok = await safeCopy(mergedText);
+      if (ok) {
+        showToast('Prompt tersatukan disalin ke clipboard');
+      } else {
+        showManualCopyDialog(mergedText);
+      }
+    });
+
+    document.getElementById('downloadMerged').addEventListener('click', ()=>{
+      const mergedText = document.getElementById('mergedPrompt').textContent;
+      if (!mergedText) return alert('Belum ada prompt gabungan. Klik Satukan Prompt dulu.');
+      const blob = new Blob([mergedText], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'sticker-prompts-merged.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Generate default prompts on load
+    renderPrompts();
+
+    // Helpful debug note in console for developers
+    console.info('Sticker Prompt Generator loaded. If clipboard copy fails, the environment may block the Clipboard API (sandbox/file://). Use Download or manual copy dialog.');
+  </script>
+</body>
+</html>
